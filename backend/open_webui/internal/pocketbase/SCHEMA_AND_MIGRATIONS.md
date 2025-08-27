@@ -3,10 +3,10 @@
 This document defines the PocketBase (PB) collections, fields, indexes, and permissions to support Open WebUI models, and how to manage them via JS migrations.
 
 ## Structure
-- Migrations directory: `backend/open_webui/internal/pocketbase/migrations/`
-- Hooks directory: `backend/open_webui/internal/pocketbase/hooks/`
+- Migrations directory (in this repo): `backend/open_webui/internal/pocketbase/migrations/`
+- Hooks directory (in this repo): `backend/open_webui/internal/pocketbase/hooks/`
+- Delivery to PB: copy/rsync these to the PocketBase server’s `pb_migrations/` and `pb_hooks/` directories (or bake into a custom PB build). There is no Admin API to install migrations.
 - Each migration file: versioned JS with `migrate((db) => { ... }, (db) => { ... })` up/down.
-- A bootstrap step will run these migrations via PB Admin API or CLI.
 
 ## Collections
 
@@ -28,12 +28,10 @@ This document defines the PocketBase (PB) collections, fields, indexes, and perm
   - `email` unique
   - `oauth_sub` unique
   - optional: `username` unique
-- Rules
-  - Read/Write rules to match existing access model (start permissive; tighten later).
 
 ### chats
 - Fields
-  - `user_id` (text)
+  - `user_id` (text, indexed)
   - `title` (text)
   - `chat` (json)
   - `meta` (json)
@@ -41,83 +39,62 @@ This document defines the PocketBase (PB) collections, fields, indexes, and perm
   - `archived` (bool)
   - `pinned` (bool)
   - `folder_id` (text)
-  - `tags` (relation list to `tags` collection)  ← replaces JSON tag array
+  - `tags` (relation list to `tags` collection)  ← JSON tags replaced by relations (decision)
 - Indexes
   - `user_id`
   - `archived`, `pinned`
-  - `updated` (PB-managed) with `user_id` composite order via query
-- Rules
-  - Read allowed to owner; shared chats via `share_id` custom logic if needed.
+  - `updated` (PB-managed) usable with sort
 
 ### messages
-- Fields
-  - `user_id` (text)
-  - `channel_id` (text)
-  - `parent_id` (text)
-  - `content` (text)
-  - `data` (json)
-  - `meta` (json)
+- Fields: `user_id` (text), `channel_id` (text), `parent_id` (text), `content` (text), `data` (json), `meta` (json)
 - Indexes: `channel_id`, `parent_id`, `user_id`, `created`
 
 ### message_reactions
-- Fields
-  - `user_id` (text)
-  - `message_id` (relation to `messages` or text)
-  - `name` (text)
+- Fields: `user_id` (text), `message_id` (relation/text), `name` (text)
 - Indexes: `message_id`, `user_id`
 
 ### tags
 - Fields
-  - `id_comp` (text, unique) ← normalized composite key: `${user_id}:${normalized_name}` (primary unique)
-  - `user_id` (text, indexed)
+  - `id` (PB primary id)
+  - `id_comp` (text, unique) ← composite logical key: `"{id_normalized}:{user_id}"`
+  - `id_normalized` (text) ← normalized tag identifier used as `id` in SQL
   - `name` (text)
+  - `user_id` (text, indexed)
   - `meta` (json)
-- Notes
-  - PB primary `id` remains; we ensure uniqueness on `id_comp` and use it as logical key.
+- Rationale
+  - SQL used composite PK `(id, user_id)` where `id` is the normalized tag key. PB doesn’t support composite PK, so we keep `id_comp` unique and index `user_id`.
 
 ### files
-- Fields
-  - `user_id` (text)
-  - `file` (file field, required)
-  - `hash` (text)
-  - `data` (json)
-  - `meta` (json)
-  - `access_control` (json)
+- Fields: `user_id` (text), `file` (file field), `hash` (text), `data` (json), `meta` (json), `access_control` (json)
 - Indexes: `user_id`
 
-### functions, tools, groups, folders, models, knowledge, notes, channels, feedbacks, prompts, memories
-- Translate 1:1 fields to PB fields (text/json/bool/date as appropriate).
-- Add minimal indexes that correspond to frequent lookups.
+### Remaining models
+- functions, tools, groups, folders, models, knowledge, notes, channels, feedbacks, prompts, memories
+- Mirror existing fields with appropriate PB types; add indexes for frequent lookups.
 
-## Migrations
-- Create collections and fields with precise types and options (required, unique, multiple for relations).
-- Add indexes via `@request.db.collection.update()` or schema helper where supported.
-- Set collection rules (list/view/create/update/delete expressions) aligning with current access; start permissive for admin bootstrap.
+## Indexes & Uniqueness
+- Use PB’s index/unique support for constraints (no app-side uniqueness shims required).
+- Add unique constraints mirroring SQL where applicable (e.g., `users.email`, `users.oauth_sub`, `tags.id_comp`).
 
-## Hooks and Custom Routes
-- Place custom route(s) in `hooks/advanced_filters.js`:
-  - Route: `GET /api/openwebui/chats/byTags` with params `userId`, `tags` (array), `mode=all|any`.
-  - Implement efficient filtering: PB query + server-side verification (fallback) or SQL via `expand` where possible.
-- Optionally add hooks for cascading updates (e.g., maintain mirrored tag arrays for backward compatibility during transition).
+## Hooks and Custom Routes (Tags)
+- Route file under `hooks/advanced_filters.js`:
+  - `GET /api/openwebui/chats/byTags?userId=...&tags=a,b,c&mode=all|any&skip=&limit=`
+  - Behavior:
+    - Resolve `tags` input to `tags` record IDs.
+    - Query `chats` with base `user_id == userId` and relation filter on `tags`.
+    - For `mode=all`, intersect results client-side in the hook to enforce “ALL” semantics if native filter falls short.
 
 ## Bootstrap & Ops
-- On startup in PB mode:
-  - Ensure admin credentials configured.
-  - Run JS migrations if pending (invoke PB CLI or Admin API).
-  - Verify required collections exist with expected fields.
+- [ ] Copy/rsync `migrations/` → PB `pb_migrations/`; `hooks/` → PB `pb_hooks/`.
+- [ ] Restart PB; verify migrations applied via logs/Admin UI.
+- [ ] Validate collections/fields/indexes exist.
 
-## Data Migration Strategy (from SQL)
-- Export per-collection data from SQL and import into PB via Admin API.
-- For `tags`:
-  - Create `id_comp = "${user_id}:${normalized(name)}"`.
-  - Build relations from `chats.tags` using existing JSON array or via tag names.
-- For `files`:
-  - Upload file content to PB and update metadata.
-
-## Security & Access
-- Start with admin-only rules; introduce per-collection rules after repositories are validated.
-- Auth: Either use PB auth for end-users or continue issuing JWT via Open WebUI and access PB as service with internal authorization checks.
+## Data Migration (one-shot)
+- [ ] Export SQL data per collection.
+- [ ] Import into PB via Admin UI/CLI or API scripts (batch).
+- [ ] Recompute `tags.id_comp` as `"{id_normalized}:{user_id}"` and create `chats.tags` relations.
+- [ ] Upload files to PB and validate `hash`.
 
 ## Testing
-- Provide a seed migration for local dev.
-- Write integration tests that spin up PB, run migrations, and assert schema integrity.
+- [ ] Seed migration for local dev.
+- [ ] Integration tests that spin up PB, assert schema integrity and basic CRUD.

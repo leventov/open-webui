@@ -5,33 +5,30 @@ This document proposes JavaScript routes and hooks to cover advanced behaviors n
 ## Directories
 - Migrations: `backend/open_webui/internal/pocketbase/migrations/`
 - Hooks: `backend/open_webui/internal/pocketbase/hooks/`
+- Delivery: copy to PB server `pb_migrations/` and `pb_hooks/` or bake into a custom PB build.
 
-## Tag Filtering Route
+## Decision: Tags Route
+- [x] Implement a custom route for "has ALL tags" chat filtering.
 - Route: `GET /api/openwebui/chats/byTags`
 - Query params:
   - `userId` (string, required)
-  - `tags` (comma-separated string of normalized tag ids or names)
+  - `tags` (comma-separated normalized tag identifiers)
   - `mode` (`all`|`any`, default `all`)
-  - `skip`, `limit` (optional pagination)
+  - `skip`, `limit` (pagination)
 - Behavior:
-  - Resolve tag identifiers to tag record IDs.
-  - Query `chats` collection with base filter `user_id == userId`.
-  - If using relations: filter by `tags` relation (PB supports `tags.id ?= ...` style). For `all` semantics, either intersect client-side or perform iterative queries and intersect IDs.
-  - Return `{ items, total }` with normalized payload (matching `ChatResponse`).
+  - Resolve tag strings to `tags` collection record IDs.
+  - Base query: `user_id == userId`.
+  - Use relation filter for `any`, and for `all` compute intersection in the hook.
+  - Return `{ items, total }` mapped to `ChatResponse` shape.
 
 ## Additional Hooks
-- Optional: maintain mirrored `meta.tags` on `chats` create/update for temporary compatibility.
-- Validation hooks: ensure `tags` normalized ids and `id_comp` uniqueness in `tags`.
-- Files post-upload: compute and store `hash` if not provided (optional).
+- Validation for `tags` normalization and `tags.id_comp` uniqueness.
+- Optional: keep mirrored `meta.tags` during transition.
 
 ## Security
-- Restrict custom route to authenticated requests; validate that `userId` matches requester or has admin privileges.
-- Rate-limit if needed via hook context.
+- Auth required; ensure `userId` matches requester or admin.
 
-## Testing Strategy
-- Unit tests for route handler logic in JS VM (where possible).
-- Integration tests from Python hitting the custom route and asserting results parity with the legacy SQL filters.
-
-## Deployment
-- Include hooks with migrations bundle; `routerAdd` in `onBeforeServe` to register the route.
-- Version route implementation to allow iterative improvements.
+## Implementation Checklist
+- [ ] Write `hooks/advanced_filters.js` registering the route via `routerAdd` in `onBeforeServe`.
+- [ ] Add unit tests (where viable) and Python integration tests against the route.
+- [ ] Document deployment steps (copy hooks, restart PB).

@@ -1,72 +1,66 @@
 # PocketBase Integration Architecture Overview
 
-## Goals
-- Add PocketBase (PB) as an optional storage backend for Open WebUI data models while retaining existing SQLAlchemy (SQLite/PostgreSQL) support.
-- Avoid attempting an SQLAlchemy dialect for PB; instead introduce clear repository interfaces with pluggable implementations.
-- Leverage PB features: records CRUD, relations, file storage, realtime (SSE), JS migrations and hooks.
-- Keep vector/pgvector stack on PostgreSQL; do not port vector retrieval to PB.
+## Decisions (updated)
+- [x] Do NOT emulate `SessionLocal`/`get_db` for PocketBase.
+  - Re-implement the existing "table" modules under `backend/open_webui/models/` to call PocketBase adapters internally (duck-typing the SQLAlchemy Session API is not safe nor desirable given the breadth of methods used: `db.get`, `db.add`, `db.query(...).filter_by(...).order_by(...).limit(...)`, `db.commit`, `db.refresh`, etc.).
+  - Keep the external Python API surface of these modules stable so the rest of the backend doesn’t change.
+- [x] Single backend target: PocketBase-only after migration (no per-model staged flags).
+  - Optional: one global env toggle (development only) to choose SQL vs PB while migrating locally, but production plan is to run PB-only.
+- [x] Tags modeling: replace JSON-based `chat.meta.tags` with PB-native relations (`chats.tags -> tags` many-to-many) and provide one PB custom route for “has ALL tags”.
+- [x] Migrations/hooks delivery: JS migrations and hooks live in-repo and must be copied into the PocketBase server filesystem (`pb_migrations/` and `pb_hooks/`) or built into a custom PB binary. There is no Admin API to install migrations.
+- [x] Uniqueness/indexes: enforce via PB schema (unique indexes supported). No application-level uniqueness shims needed unless expressly noted.
+- [x] Transactions: current Open WebUI code has no multi-entity transactions; methods commit individually. PB’s lack of multi-op transactions is acceptable for parity.
+  - Reference: commits in model methods (e.g., `backend/open_webui/models/messages.py` lines 118–123) and global HTTP post-request commit middleware:
+```1162:1167:backend/open_webui/main.py
+@app.middleware("http")
+async def commit_session_after_request(request: Request, call_next):
+    response = await call_next(request)
+    # log.debug("Commit session after request")
+    Session.commit()
+    return response
+```
 
-## High-Level Design
-- Introduce repository interfaces per domain model group (e.g., users, chats, messages, tags, files, groups, folders, models).
-  - Default implementation: existing SQLAlchemy-based repositories (thin wrappers around current table classes).
-  - PB implementation: new adapters using the PocketBase Python client.
-- Introduce a configuration flag/env to select backend per model group (or globally), allowing staged rollout.
-- Replace JSON-based tag filtering with PB-native relations and/or PB JS custom route for complex filters.
-- Use PB JS migrations to define collections, indexes, and access rules. Store migrations in-repo and apply at bootstrap.
-- Use PB SSE subscriptions to surface model change events to the existing Socket.IO layer.
-- Replace `files` table with PB file fields; support uploads/downloads via PB API.
+## High-Level Implementation Strategy
+- [ ] Implement PocketBase adapters (per model group) and map to the existing Pydantic models.
+- [ ] Update each `backend/open_webui/models/*.py` module to use the PB adapters internally (preserve public method signatures and return types).
+- [ ] Replace tag storage with PB relations and update list/filter methods to use relations and the custom route.
+- [ ] Deliver PB JS migrations and hooks into `pb_migrations/` and `pb_hooks/` on the PB server; document ops steps.
+- [ ] Add a realtime bridge from PB SSE to our Socket.IO layer.
+- [ ] Replace `files` SQL table with PB file fields and adjust workflows.
 
 ## Components
-- Repositories Layer
+- Repositories/Adapters Layer
   - Interfaces: `IUsersRepo`, `IChatsRepo`, `IMessagesRepo`, `ITagsRepo`, `IFilesRepo`, `IGroupsRepo`, `IFoldersRepo`, `IModelsRepo`.
-  - SQLAlchemy implementations: thin wrappers that call the existing model classes in `backend/open_webui/models`.
-  - PB implementations: translate repository methods to PB client operations and filters.
+  - SQL implementation (for local parity/testing), PB implementation (production).
 - PocketBase Client
-  - Use `pocketbase` Python client (`vaphes/pocketbase`) with an authenticated admin or service user session.
-  - Encapsulate client in a connection module with retry and token refresh.
+  - Use `vaphes/pocketbase` Python client with admin/service auth, retries, and pagination helpers.
 - PB Schema & Migrations
-  - JS migrations under `backend/open_webui/internal/pocketbase/migrations/` defining collections, fields, indexes, and rules.
-  - Hooks under `backend/open_webui/internal/pocketbase/hooks/` for custom routes (e.g., tag filters) and server-side enrichments.
+  - JS migrations under `backend/open_webui/internal/pocketbase/migrations/`.
+  - Hooks under `backend/open_webui/internal/pocketbase/hooks/` (custom routes, validations).
 - Realtime Bridge
-  - A Python service subscribes to PB SSE per relevant collection and forwards normalized events into the existing Socket.IO namespaces/rooms.
+  - Subscribe to PB SSE and normalize to Socket.IO events.
 - Files Integration
-  - `files` collection with file field(s), metadata fields, and access controls.
-  - Upload via PB multipart endpoints; store returned file token/path in domain models when needed.
+  - `files` collection with file field(s) and metadata.
 
-## Data Modeling Notes
+## Data Modeling Notes (updated)
 - IDs and timestamps
-  - Prefer PB’s `id`, `created`, `updated`. Maintain compatibility by mapping to existing response shapes in repositories.
-- Tags
-  - Replace `chat.meta.tags` JSON array with a PB relation field from `chat` to `tag` (many-to-many). For backward compatibility and migration, keep a temporary mirror.
-  - For advanced queries (e.g., “chat has all of tags [a,b,c]”), implement a PB JS route to perform server-side filtering efficiently if PB filter syntax becomes too complex.
-- Unique constraints
-  - Composite `(id,user_id)` replaced by a single PB `id` (e.g., `"{user_id}:{normalized_tag}"`) and an indexed `user_id` field.
-  - Enforce additional uniqueness in application code where PB can’t express it directly.
+  - Use PB’s `id`, `created`, `updated`. Repositories map to existing `created_at`/`updated_at` fields (epoch) for compatibility.
+- Tags (decision)
+  - PB relation `chats.tags` replaces JSON array at `chat.meta.tags`.
+  - Provide a PB custom route for "has ALL tags" semantics.
+- Unique constraints (updated)
+  - For `tags`, SQL used composite primary key `(id, user_id)` where `id` is the normalized tag key. In PB, create a unique field `id_comp = "{id}:{user_id}"` and a separate indexed `user_id` field.
+  - PB unique indexes cover additional uniqueness cases.
 
-## Request Lifecycle & Consistency
-- Current code commits frequently; not transaction-heavy. PB lacks multi-op transactions; repository methods should:
-  - Keep operations idempotent.
-  - Group related changes in single repo calls when atomicity matters (best-effort with retries).
-- Global post-request commit in FastAPI is retained for SQL backends; PB adapters perform immediate HTTP operations.
+## Request Lifecycle & Consistency (updated)
+- No multi-entity transactions exist in current code; operations commit per-method.
+- HTTP middleware post-commit reference: `backend/open_webui/main.py` lines 1162–1167 (see snippet above). Socket handlers do not rely on middleware and the write methods they call commit internally.
 
 ## Non-Goals
-- Porting vector store or advanced SQL queries (pgcrypto, lateral joins) to PB.
-- Emulating an SQLAlchemy dialect over HTTP.
+- Port vector/pgvector or advanced SQL (pgcrypto, lateral joins) to PB.
+- Build an SQLAlchemy dialect for PB.
 
-## Configuration & Bootstrap
-- Env flags to select backend (e.g., `STORAGE_BACKEND=sqlalchemy|pocketbase`).
-- On PB selection, bootstrap step runs PB JS migrations via the PB Admin API.
-- Health checks ensure PB availability; fail-fast if schema missing.
-
-## Risks & Mitigations
-- Performance regressions on complex filters: mitigate with relations, indexes, and custom PB routes.
-- Consistency on multi-step updates: consolidate into single repo methods; implement retries.
-- Migration complexity: staged rollout per model group with dual-write or backfill scripts if needed.
-
-## Rollout Strategy (summary)
-1. Stand up PB, run migrations, and wire the PB client.
-2. Implement PB repos for users/chats/messages first (without tags filter changes), feature-flagged.
-3. Remodel tags to relations and enable advanced filtering via PB route.
-4. Move files to PB fields/APIs.
-5. Add realtime bridge subscriptions.
-6. Cutover remaining models; deprecate SQL paths only if desired.
+## Operations & Bootstrap
+- [ ] Copy JS migrations into PB `pb_migrations/`; copy hooks into `pb_hooks/`.
+- [ ] Restart PB to apply new migrations; verify schema via PB Admin UI/CLI.
+- [ ] Configure service/admin credentials for the backend PB client.
