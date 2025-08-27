@@ -2,6 +2,10 @@
 
 This document defines the PocketBase (PB) collections, fields, indexes, and permissions to support Open WebUI models, and how to manage them via JS migrations.
 
+References:
+- PB JS migrations: `https://pocketbase.io/docs/js-migrations/`
+- PB collections API: `https://pocketbase.io/docs/api-collections/`
+
 ## Structure
 - Migrations directory (in this repo): `backend/open_webui/internal/pocketbase/migrations/`
 - Hooks directory (in this repo): `backend/open_webui/internal/pocketbase/hooks/`
@@ -25,9 +29,7 @@ This document defines the PocketBase (PB) collections, fields, indexes, and perm
   - `api_key` (text, unique?)
   - `oauth_sub` (text, unique)
 - Indexes
-  - `email` unique
-  - `oauth_sub` unique
-  - optional: `username` unique
+  - `email` unique, `oauth_sub` unique, optional `username` unique
 
 ### chats
 - Fields
@@ -39,11 +41,8 @@ This document defines the PocketBase (PB) collections, fields, indexes, and perm
   - `archived` (bool)
   - `pinned` (bool)
   - `folder_id` (text)
-  - `tags` (relation list to `tags` collection)  ← JSON tags replaced by relations (decision)
-- Indexes
-  - `user_id`
-  - `archived`, `pinned`
-  - `updated` (PB-managed) usable with sort
+  - `tags` (relation list to `tags` collection)
+- Indexes: `user_id`, `archived`, `pinned`, `updated`
 
 ### messages
 - Fields: `user_id` (text), `channel_id` (text), `parent_id` (text), `content` (text), `data` (json), `meta` (json)
@@ -56,37 +55,31 @@ This document defines the PocketBase (PB) collections, fields, indexes, and perm
 ### tags
 - Fields
   - `id` (PB primary id)
-  - `id_comp` (text, unique) ← composite logical key: `"{id_normalized}:{user_id}"`
   - `id_normalized` (text) ← normalized tag identifier used as `id` in SQL
+  - `id_comp` (text, unique) ← composite logical key: `"{id_normalized}:{user_id}"`
   - `name` (text)
   - `user_id` (text, indexed)
   - `meta` (json)
-- Rationale
-  - SQL used composite PK `(id, user_id)` where `id` is the normalized tag key. PB doesn’t support composite PK, so we keep `id_comp` unique and index `user_id`.
 
 ### files
 - Fields: `user_id` (text), `file` (file field), `hash` (text), `data` (json), `meta` (json), `access_control` (json)
 - Indexes: `user_id`
 
-### Remaining models
-- functions, tools, groups, folders, models, knowledge, notes, channels, feedbacks, prompts, memories
-- Mirror existing fields with appropriate PB types; add indexes for frequent lookups.
+### functions, tools, groups, folders, models, knowledge, notes, channels, feedbacks, prompts, memories
+- Mirror fields from `backend/open_webui/models/*.py` with PB types (text/json/bool/date as appropriate).
+- Add indexes for frequent lookups (e.g., `groups` by `user_id`, `folders` by `user_id`, `models` by `user_id` and `is_active`).
 
 ## Indexes & Uniqueness
-- Use PB’s index/unique support for constraints (no app-side uniqueness shims required).
-- Add unique constraints mirroring SQL where applicable (e.g., `users.email`, `users.oauth_sub`, `tags.id_comp`).
+- Use PB’s unique/index support (see PB docs) to enforce constraints (e.g., `users.email`, `users.oauth_sub`, `tags.id_comp`).
 
 ## Hooks and Custom Routes (Tags)
-- Route file under `hooks/advanced_filters.js`:
+- `pb_hooks/tag_filters.pb.js`
   - `GET /api/openwebui/chats/byTags?userId=...&tags=a,b,c&mode=all|any&skip=&limit=`
-  - Behavior:
-    - Resolve `tags` input to `tags` record IDs.
-    - Query `chats` with base `user_id == userId` and relation filter on `tags`.
-    - For `mode=all`, intersect results client-side in the hook to enforce “ALL” semantics if native filter falls short.
+  - For `mode=all`, compute intersection in hook if needed.
 
 ## Bootstrap & Ops
 - [ ] Copy/rsync `migrations/` → PB `pb_migrations/`; `hooks/` → PB `pb_hooks/`.
-- [ ] Restart PB; verify migrations applied via logs/Admin UI.
+- [ ] Restart PB; verify migrations applied via Admin UI/CLI.
 - [ ] Validate collections/fields/indexes exist.
 
 ## Data Migration (one-shot)

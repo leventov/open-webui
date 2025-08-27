@@ -5,19 +5,21 @@ This document defines repository interfaces for Open WebUI domain models and the
 ## Strategy (explicit)
 - [x] Do NOT emulate `SessionLocal()` / `get_db` for PB.
   - We will not duck-type SQLAlchemy sessions; instead, we will implement PB adapters and update the existing model modules to call them inside their methods, preserving public signatures.
-- [x] No per-model feature flags in production. A single backend is targeted post-migration (PB).
+- [x] No live migration flags in production.
+  - We will not support per-model or per-request switching between SQL and PB in production. The architectural decision is a one-time migration to PB and then operating PB-only.
 
 ## Principles
 - Keep existing API shapes returned to the rest of the app unchanged.
 - Repositories encapsulate all persistence details (SQL or PB) and mapping between PB records and Pydantic models.
 - PB adapters must be idempotent and handle retries.
+  - Note: If `vaphes/pocketbase` already provides robust retry, leverage it; otherwise add a thin retry/backoff in our wrapper.
 - Provide consistent error and NotFound semantics.
 
 ## Interfaces (illustrative)
-- `IUsersRepo`, `IChatsRepo`, `IMessagesRepo`, `ITagsRepo`, `IFilesRepo`, `IGroupsRepo`, `IFoldersRepo`, `IModelsRepo`.
+- `IUsersRepo`, `IChatsRepo`, `IMessagesRepo`, `ITagsRepo`, `IFilesRepo`, `IGroupsRepo`, `IFoldersRepo`, `IModelsRepo`, `IKnowledgeRepo`, `INotesRepo`, `IChannelsRepo`, `IFeedbacksRepo`, `IPromptsRepo`, `IMemoriesRepo`, `IFunctionsRepo`, `IToolsRepo`.
 
 ## PB Client Wrapper
-- [ ] Implement a PB client wrapper: auth, retries, pagination helpers.
+- [ ] Implement a PB client wrapper: auth, retries (or leverage client), pagination helpers.
 
 ## Mappings: SQL -> PB
 - IDs: use PB `id` and map types.
@@ -32,11 +34,7 @@ This document defines repository interfaces for Open WebUI domain models and the
 - Validation/Conflict → return explicit error or `None` consistently; log context.
 
 ## Implementation Checklist
-- [ ] Implement `UsersRepoPB` and map to `UserModel` APIs.
-- [ ] Implement `ChatsRepoPB` (CRUD, share, pin/archive) and tag relation management.
-- [ ] Implement `MessagesRepoPB` and reactions.
-- [ ] Implement `TagsRepoPB` with `id_comp` uniqueness and normalization.
-- [ ] Implement `FilesRepoPB` with multipart upload and download URL helpers.
+- [ ] Implement PB repos for: users, chats, messages, tags, files, groups, folders, models, knowledge, notes, channels, feedbacks, prompts, memories, functions, tools.
 - [ ] Wire `backend/open_webui/models/*.py` to call PB repos internally without changing public signatures.
 - [ ] Add contract tests running against SQL and PB adapters for parity.
 

@@ -4,8 +4,8 @@
 - [x] Do NOT emulate `SessionLocal`/`get_db` for PocketBase.
   - Re-implement the existing "table" modules under `backend/open_webui/models/` to call PocketBase adapters internally (duck-typing the SQLAlchemy Session API is not safe nor desirable given the breadth of methods used: `db.get`, `db.add`, `db.query(...).filter_by(...).order_by(...).limit(...)`, `db.commit`, `db.refresh`, etc.).
   - Keep the external Python API surface of these modules stable so the rest of the backend doesn’t change.
-- [x] Single backend target: PocketBase-only after migration (no per-model staged flags).
-  - Optional: one global env toggle (development only) to choose SQL vs PB while migrating locally, but production plan is to run PB-only.
+- [x] One-time backend migration; no live flags in production.
+  - We will not support per-model or per-request switching in production. The architecture assumes a single cutover from SQL (sqlite/pg) to PocketBase; after migration, the system operates PB-only.
 - [x] Tags modeling: replace JSON-based `chat.meta.tags` with PB-native relations (`chats.tags -> tags` many-to-many) and provide one PB custom route for “has ALL tags”.
 - [x] Migrations/hooks delivery: JS migrations and hooks live in-repo and must be copied into the PocketBase server filesystem (`pb_migrations/` and `pb_hooks/`) or built into a custom PB binary. There is no Admin API to install migrations.
 - [x] Uniqueness/indexes: enforce via PB schema (unique indexes supported). No application-level uniqueness shims needed unless expressly noted.
@@ -49,7 +49,7 @@ async def commit_session_after_request(request: Request, call_next):
   - PB relation `chats.tags` replaces JSON array at `chat.meta.tags`.
   - Provide a PB custom route for "has ALL tags" semantics.
 - Unique constraints (updated)
-  - For `tags`, SQL used composite primary key `(id, user_id)` where `id` is the normalized tag key. In PB, create a unique field `id_comp = "{id}:{user_id}"` and a separate indexed `user_id` field.
+  - For `tags`, SQL used composite primary key `(id, user_id)` where `id` is the normalized tag key. In PB, create `id_normalized` and a unique field `id_comp = "{id_normalized}:{user_id}"` plus an indexed `user_id`.
   - PB unique indexes cover additional uniqueness cases.
 
 ## Request Lifecycle & Consistency (updated)
@@ -60,7 +60,9 @@ async def commit_session_after_request(request: Request, call_next):
 - Port vector/pgvector or advanced SQL (pgcrypto, lateral joins) to PB.
 - Build an SQLAlchemy dialect for PB.
 
-## Operations & Bootstrap
-- [ ] Copy JS migrations into PB `pb_migrations/`; copy hooks into `pb_hooks/`.
-- [ ] Restart PB to apply new migrations; verify schema via PB Admin UI/CLI.
-- [ ] Configure service/admin credentials for the backend PB client.
+## References
+- PB API records: `https://pocketbase.io/docs/api-records/`
+- PB realtime: `https://pocketbase.io/docs/api-realtime/`
+- PB files: `https://pocketbase.io/docs/files-handling/`
+- PB collections: `https://pocketbase.io/docs/api-collections/`
+- PB JS migrations: `https://pocketbase.io/docs/js-migrations/`

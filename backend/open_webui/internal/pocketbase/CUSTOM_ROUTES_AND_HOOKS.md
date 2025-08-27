@@ -21,6 +21,10 @@ This document proposes JavaScript routes and hooks to cover advanced behaviors n
   - Use relation filter for `any`, and for `all` compute intersection in the hook.
   - Return `{ items, total }` mapped to `ChatResponse` shape.
 
+## Route Registration
+- Use a top-level `routerAdd()` in the hook file (e.g., `pb_hooks/tag_filters.pb.js`) as per PB JS overview.
+- No need for `onBeforeServe` wrappers.
+
 ## Additional Hooks
 - Validation for `tags` normalization and `tags.id_comp` uniqueness.
 - Optional: keep mirrored `meta.tags` during transition.
@@ -29,6 +33,10 @@ This document proposes JavaScript routes and hooks to cover advanced behaviors n
 - Auth required; ensure `userId` matches requester or admin.
 
 ## Implementation Checklist
-- [ ] Write `hooks/advanced_filters.js` registering the route via `routerAdd` in `onBeforeServe`.
+- [ ] Write `pb_hooks/tag_filters.pb.js` registering the route via top-level `routerAdd`.
 - [ ] Add unit tests (where viable) and Python integration tests against the route.
 - [ ] Document deployment steps (copy hooks, restart PB).
+
+## References
+- PocketBase JS overview: `https://pocketbase.io/docs/js-overview/`
+- PB JS router: `https://pocketbase.io/docs/js-routing/`

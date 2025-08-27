@@ -2,6 +2,9 @@
 
 This document details how to migrate and operate file storage using PocketBase (PB) file fields, replacing the existing `files` SQL table and local path handling.
 
+References:
+- PB files handling: `https://pocketbase.io/docs/files-handling/`
+
 ## Goals
 - Store file binary content in PB’s file storage via file fields.
 - Keep metadata (`hash`, `data`, `meta`, `access_control`) on the PB record.
@@ -33,9 +36,13 @@ This document details how to migrate and operate file storage using PocketBase (
 - Upload (server-mediated): server constructs multipart request; PB returns record with file path/token.
 - Download: generate authenticated URL via PB client and redirect, or proxy stream through our server for uniform auth.
 
+## Storage Considerations
+- If both source (SQL-backed) and PB use local storage on the same host, PB can point to the same directory; migrate only metadata.
+- If using object storage (e.g., S3) on both sides, migrate metadata (URIs, filenames, hash) and avoid re-upload when feasible.
+
 ## Migration from SQL (one-shot)
-- [ ] Read file blobs from current storage using `path`.
-- [ ] Upload to PB; set metadata fields.
+- [ ] Read file blobs from current storage using `path` (or reuse storage per the note above).
+- [ ] Upload to PB when needed; set metadata fields.
 - [ ] Verify checksums using `hash` (if present).
 - [ ] Update cross-references if any.
 

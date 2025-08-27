@@ -1,6 +1,10 @@
 # Migration Plan (One-Shot)
 
-This document outlines a one-shot migration from SQLAlchemy storage to PocketBase (PB) for Open WebUI, along with validation and backout steps. No staged/feature-flag rollout in production.
+This document outlines a one-shot migration from SQLAlchemy storage to PocketBase (PB) for Open WebUI using Python batch scripts. It complements the architecture and schema docs.
+
+References:
+- PB records API: `https://pocketbase.io/docs/api-records/`
+- PB files handling: `https://pocketbase.io/docs/files-handling/`
 
 ## Preparation
 - [ ] Stand up PB; configure admin/service credentials.
@@ -8,15 +12,14 @@ This document outlines a one-shot migration from SQLAlchemy storage to PocketBas
 - [ ] Restart PB and verify schema via Admin UI/CLI.
 
 ## Adapter Implementation
-- [ ] Implement PB adapters for all domain models (users, chats, messages, tags, files, groups, folders, models, knowledge, notes, channels, feedbacks, prompts, memories).
+- [ ] Implement PB adapters for all domain models.
 - [ ] Update `backend/open_webui/models/*.py` internals to call PB adapters; keep public signatures consistent.
 - [ ] Implement realtime bridge and files integration.
 
-## Data Export & Import
-- [ ] Export SQL data per table to NDJSON/CSV.
-- [ ] Import into PB via Admin UI/CLI or batch scripts using the Python client.
+## Data Export & Import (Python batch)
+- [ ] Write Python batch scripts that iterate SQL rows via server-side cursors and insert into PB using the Python client (avoid intermediate CSV/NDJSON when possible).
 - [ ] For tags: compute `id_comp = "{id_normalized}:{user_id}"` and create `chats.tags` relations.
-- [ ] For files: upload file binaries and set metadata; verify `hash`.
+- [ ] For files: if storage can be reused (same local dir or S3), migrate metadata only; otherwise upload binaries and set metadata; verify `hash` where present.
 
 ## Validation
 - [ ] Contract tests targeting PB adapters.
@@ -28,9 +31,5 @@ This document outlines a one-shot migration from SQLAlchemy storage to PocketBas
 - [ ] Monitor errors/latency; address issues.
 
 ## Backout Plan
-- [ ] Keep SQL snapshot taken just before cutover.
+- [ ] Keep a SQL snapshot taken just before cutover.
 - [ ] If needed, revert backend to SQL config and investigate.
-
-## Notes
-- Vector search and advanced SQL features remain on PostgreSQL (unchanged).
-- No per-model feature flags in production.
