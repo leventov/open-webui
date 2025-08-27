@@ -17,29 +17,45 @@ References:
   - Per-record `access_control` fields (models like `models.py`) checked via `has_access(user_id, type, access_control)`.
 - OAuth and LDAP: optional sign-in paths build users and still mint Open WebUI JWTs.
 
-## Integration Approach with PocketBase
+## Default Integration Approach with PocketBase
 - Service-to-service model: Open WebUI remains the identity provider for user sessions to the Open WebUI API and UI. PB is a data store; we use a PB service/admin account for API calls from the server.
-  - Rationale: existing auth flows (JWT/API key/OAuth/LDAP) remain unchanged for clients; migrating identity to PB Auth isn’t required and would be disruptive.
+  - Rationale: existing auth flows (JWT/API key/OAuth/LDAP) remain unchanged for clients; PB is not directly exposed to end-users.
   - PB collection rules can still be configured, but Open WebUI enforces authorization in its service layer as today.
 
-### What we do in PB
-- Admin/service auth for backend:
-  - Backend initializes a PB client with admin/service credentials. Token is stored server-side and refreshed transparently (see REPOSITORIES_AND_ADAPTERS.md wrapper checklist).
-- Collections rules:
-  - Start permissive to the service user (admin); tighten later if we offload some read filters to PB rules.
-  - Do not rely on PB as the end-user identity/authorization decision-maker for application requests.
+## Optional: Reusing Open WebUI Auth with PocketBase (when exposing PB)
+If you choose to expose PB directly (e.g., Admin UI, custom PB endpoints, or third-party apps using PB SDK), you can reuse Open WebUI credentials/tokens so users don’t manage two identities.
 
-### What we keep in Open WebUI
-- JWT issuance/verification and API key auth remain as-is (`utils/auth.py`, `routers/auths.py`).
-- Role checks, permissions aggregation, and `access_control` checks remain in Python (`utils/access_control.py`).
-- Group membership management remains in Open WebUI’s `groups` repo (stored in PB collections).
+### Option 1: Token exchange (Open WebUI JWT → PB record token)
+- Flow
+  - Create a PB hook/route `POST /api/openwebui/auth/exchange` that accepts an Open WebUI JWT.
+  - The hook verifies the JWT either via:
+    - Shared secret (same signing key) and audience/issuer check, or
+    - Introspection callback to Open WebUI (`/auths/` endpoints) to validate and fetch user info.
+  - The hook looks up/creates a PB `users` record mapped to Open WebUI `users.id` (store OWUI id in a dedicated field, e.g., `owui_user_id`).
+  - The hook issues a PB auth token for that record (standard PB record auth token) with TTL no longer than the remaining JWT lifetime.
+- Considerations
+  - Enforce strict audience/issuer and clock skew; don’t exceed OWUI token expiry.
+  - Provide logout/invalidate on PB side if OWUI token is revoked (short TTL preferred).
+  - Map roles and minimal profile fields (name, email, avatar) to PB record for UI display; authorization remains server-side in OWUI for app APIs.
 
-## Optional Future: PB as Identity Provider
-- PB supports record auth and OAuth providers. If desired later:
-  - Use PB Auth for user login; store PB record `id` alongside Open WebUI `users.id` (mapping field) or make PB the canonical user store.
-  - Adjust JWT creation to mint tokens from PB (or proxy PB tokens through the backend).
-  - Mirror/replace groups and access rules with PB rules.
-- Not part of the initial plan; initial plan uses PB only as storage with a service account.
+### Option 2: Align OAuth providers
+- Configure the same OAuth providers in PB as in OWUI (Google, GitHub, etc.). Users log in to PB with the same provider.
+- Maintain a mapping between PB record and OWUI user (`owui_user_id` field) via email or a dedicated claim.
+- Pros: no custom hook; Cons: provider drift, duplicate sessions.
+
+### Option 3: Reverse proxy header-based SSO
+- Place PB behind a reverse proxy that validates the OWUI JWT and injects headers (e.g., `X-User-Id`, `X-User-Email`).
+- Add a PB hook to trust those headers (from the proxy only) and map to a PB record session.
+- Useful when Admin UI or certain routes must be visible to authenticated staff only.
+
+### Option 4: LDAP reuse
+- OWUI already supports LDAP sign-in. PB natively doesn’t support LDAP as a first-class provider but can leverage custom hooks.
+- Implement a PB hook that binds to LDAP (mirroring OWUI LDAP codepaths) or rely on Option 1 token exchange so PB trusts OWUI’s LDAP-backed JWT.
+- Community discussions for reference:
+  - `https://github.com/pocketbase/pocketbase/discussions/4796`
+  - `https://github.com/seriousm4x/UpSnap/discussions/76`
+  - `https://github.com/pocketbase/pocketbase/discussions/6016`
+  - `https://github.com/pocketbase/pocketbase/discussions/4132`
 
 ## Authorization Mapping Details
 - Roles: Store `role` on `users` collection (PB). Enforce via Python checks as today.
@@ -50,15 +66,20 @@ References:
 ## Security & Production Considerations
 - PB hardening per `going-to-production`:
   - Run PB behind a reverse proxy, enable TLS, secure admin credentials.
-  - Restrict PB Admin UI exposure in production (service account only).
-  - Configure PB CORS as needed for server-side only access.
+  - Restrict PB Admin UI exposure in production (service account only or SSO-protected).
+  - Configure PB CORS as needed for server-side only access, unless exposing endpoints.
 - Backend secrets:
   - Store PB service credentials securely.
   - Ensure PB client tokens are rotated/refreshed as required by the client library.
 
-## Implementation Checklist
-- [ ] Create PB service/admin account and configure credentials for the backend.
-- [ ] Implement PB client wrapper with login/refresh and retries.
-- [ ] Store roles/groups/access_control fields in PB collections.
-- [ ] Keep Open WebUI JWT/API key flows unchanged.
-- [ ] Add tests: ensure authorization checks continue to function with PB-backed repos (groups, permissions, access_control).
+## Implementation Checklists
+- Token exchange
+  - [ ] PB hook route `/api/openwebui/auth/exchange` that validates OWUI JWT (shared secret or introspection).
+  - [ ] Map `owui_user_id` to PB record; create if missing; issue PB token with bounded TTL.
+  - [ ] Document reverse mapping and logout story.
+- OAuth alignment
+  - [ ] Configure same providers in PB; ensure email/subject mapping to `owui_user_id`.
+- Reverse proxy SSO
+  - [ ] Gate PB behind proxy that validates OWUI JWT and injects identity headers; PB hook trusts proxy and maps record.
+- LDAP
+  - [ ] Prefer token exchange to avoid duplicating LDAP logic; if needed, implement a PB hook for LDAP bind.
