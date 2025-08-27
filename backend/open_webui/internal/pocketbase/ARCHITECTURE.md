@@ -19,6 +19,8 @@ async def commit_session_after_request(request: Request, call_next):
     Session.commit()
     return response
 ```
+- [x] AuthN/AuthZ model: Open WebUI remains the identity provider; PB is accessed via a service account.
+  - Details in `AUTH_AND_AUTHORIZATION.md`.
 
 ## High-Level Implementation Strategy
 - [ ] Implement PocketBase adapters (per model group) and map to the existing Pydantic models.
@@ -66,3 +68,5 @@ async def commit_session_after_request(request: Request, call_next):
 - PB files: `https://pocketbase.io/docs/files-handling/`
 - PB collections: `https://pocketbase.io/docs/api-collections/`
 - PB JS migrations: `https://pocketbase.io/docs/js-migrations/`
+- PB auth: `https://pocketbase.io/docs/authentication/`
+- PB production: `https://pocketbase.io/docs/going-to-production/`
