@@ -7,6 +7,7 @@
 - [x] One-time backend migration; no live flags in production.
   - We will not support per-model or per-request switching in production. The architecture assumes a single cutover from SQL (sqlite/pg) to PocketBase; after migration, the system operates PB-only.
 - [x] Tags modeling: replace JSON-based `chat.meta.tags` with PB-native relations (`chats.tags -> tags` many-to-many) and provide one PB custom route for “has ALL tags”.
+  - Maintain `chat.meta.tags` JSON array mirrored from relations in PB to support bidirectional offline migrations.
 - [x] Migrations/hooks delivery: JS migrations and hooks live in-repo and must be copied into the PocketBase server filesystem (`pb_migrations/` and `pb_hooks/`) or built into a custom PB binary. There is no Admin API to install migrations.
 - [x] Uniqueness/indexes: enforce via PB schema (unique indexes supported). No application-level uniqueness shims needed unless expressly noted.
 - [x] Transactions: current Open WebUI code has no multi-entity transactions; methods commit individually. PB’s lack of multi-op transactions is acceptable for parity.
@@ -21,11 +22,13 @@ async def commit_session_after_request(request: Request, call_next):
 ```
 - [x] AuthN/AuthZ model: Open WebUI remains the identity provider; PB is accessed via a service account.
   - Details in `AUTH_AND_AUTHORIZATION.md`.
+- [x] Offline, bidirectional migrations are a goal.
+  - See `OFFLINE_MIGRATIONS.md`; schema and hooks are designed to preserve reversibility (e.g., mirrored `chat.meta.tags`).
 
 ## High-Level Implementation Strategy
 - [ ] Implement PocketBase adapters (per model group) and map to the existing Pydantic models.
 - [ ] Update each `backend/open_webui/models/*.py` module to use the PB adapters internally (preserve public method signatures and return types).
-- [ ] Replace tag storage with PB relations and update list/filter methods to use relations and the custom route.
+- [ ] Replace tag storage with PB relations and update list/filter methods to use relations and the custom route; keep mirrored `chat.meta.tags` in PB.
 - [ ] Deliver PB JS migrations and hooks into `pb_migrations/` and `pb_hooks/` on the PB server; document ops steps.
 - [ ] Add a realtime bridge from PB SSE to our Socket.IO layer.
 - [ ] Replace `files` SQL table with PB file fields and adjust workflows.
@@ -70,3 +73,4 @@ async def commit_session_after_request(request: Request, call_next):
 - PB JS migrations: `https://pocketbase.io/docs/js-migrations/`
 - PB auth: `https://pocketbase.io/docs/authentication/`
 - PB production: `https://pocketbase.io/docs/going-to-production/`
+- Offline migrations: `OFFLINE_MIGRATIONS.md`

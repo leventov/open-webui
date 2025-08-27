@@ -27,7 +27,7 @@ This document proposes JavaScript routes and hooks to cover advanced behaviors n
 
 ## Additional Hooks
 - Validation for `tags` normalization and `tags.id_comp` uniqueness.
-- Optional: keep mirrored `meta.tags` during transition.
+- Mirroring: always maintain `chat.meta.tags` JSON array consistent with `chats.tags` relations to enable offline, bidirectional migrations (see `OFFLINE_MIGRATIONS.md`).
 
 ## Security
 - Auth required; ensure `userId` matches requester or admin.

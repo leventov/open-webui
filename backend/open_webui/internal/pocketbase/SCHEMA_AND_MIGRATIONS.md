@@ -5,6 +5,7 @@ This document defines the PocketBase (PB) collections, fields, indexes, and perm
 References:
 - PB JS migrations: `https://pocketbase.io/docs/js-migrations/`
 - PB collections API: `https://pocketbase.io/docs/api-collections/`
+- Offline migrations: see `OFFLINE_MIGRATIONS.md`
 
 ## Structure
 - Migrations directory (in this repo): `backend/open_webui/internal/pocketbase/migrations/`
@@ -35,7 +36,7 @@ References:
 - Fields
   - `user_id` (text, indexed)
   - `title` (text)
-  - `chat` (json)
+  - `chat` (json) ← must include `meta.tags` array mirrored from relations to enable offline migrations
   - `meta` (json)
   - `share_id` (text, unique?)
   - `archived` (bool)
@@ -76,6 +77,7 @@ References:
 - `pb_hooks/tag_filters.pb.js`
   - `GET /api/openwebui/chats/byTags?userId=...&tags=a,b,c&mode=all|any&skip=&limit=`
   - For `mode=all`, compute intersection in hook if needed.
+  - Ensure `chat.meta.tags` is updated alongside `chats.tags` relations.
 
 ## Bootstrap & Ops
 - [ ] Copy/rsync `migrations/` → PB `pb_migrations/`; `hooks/` → PB `pb_hooks/`.
