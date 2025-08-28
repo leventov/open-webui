@@ -21,6 +21,7 @@ async def commit_session_after_request(request: Request, call_next):
     return response
 ```
 - [x] AuthN/AuthZ model: PocketBase is the native identity provider.
+  - Use a PB Auth collection for users (not a base collection) to leverage built-in login, OAuth, email verification, and session tokens.
   - Open WebUI verifies PB-issued tokens and projects PB users into its domain model.
   - Existing Open WebUI JWT issuance is disabled in PB mode (except for legacy API keys as configured).
   - Details in `AUTH_AND_AUTHORIZATION.md`.

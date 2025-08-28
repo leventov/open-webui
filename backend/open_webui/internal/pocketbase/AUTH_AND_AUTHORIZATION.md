@@ -19,7 +19,8 @@ References:
 
 ## Default Approach: PocketBase-native Identity (recommended)
 - PocketBase is the identity provider (IdP) for the application.
-- The SPA authenticates with PB (email/password, OAuth, etc.) and obtains a PB record token/cookie.
+- Use a PocketBase Auth collection for users (PB’s first-class auth collection type), not a plain base collection. This enables login, password reset, OAuth providers, email verification, and built-in session tokens.
+- The SPA authenticates with PB (email/password, OAuth, etc.) against the Auth collection and obtains a PB record token/cookie.
 - Open WebUI accepts PB-issued user tokens for all app endpoints, verifies them, and derives the current user from PB. Open WebUI no longer mints its own primary user JWT for interactive sessions.
 
 ### Verification on the backend
@@ -29,14 +30,14 @@ References:
   - Reverse proxy trust: place PB behind a gateway that validates PB token and injects identity headers; OWUI trusts only the gateway.
 
 ### Identity and profile mapping
-- Canonical user store: PB `users` collection.
-- Open WebUI’s `users` model becomes a thin projection of PB user data:
+- Canonical user store: a PB Auth collection (commonly named `users`).
+- Open WebUI’s `users` model becomes a thin projection of the Auth collection record:
   - Store `pb_user_id` (authoritative key) and only OWUI-specific profile fields.
-  - Do not store credential hashes in Open WebUI.
-  - Migrate role and group membership to PB and consume them from PB for authorization decisions.
+  - Do not store credential hashes in Open WebUI; rely on PB Auth features (verification, password reset, OAuth linking).
+  - Roles and groups are PB-side fields/relations; Open WebUI consumes them for authorization decisions.
 
 ### OAuth/OIDC and LDAP
-- Use PB providers for OAuth/OIDC. Disable overlapping providers in Open WebUI when PB mode is enabled.
+- Use PB providers for OAuth/OIDC on the Auth collection. Disable overlapping providers in Open WebUI when PB mode is enabled.
 - For LDAP deployments, implement PB-side integration (hook) or place PB behind an auth proxy that handles LDAP and forwards an authenticated session.
 
 ### API keys
