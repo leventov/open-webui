@@ -10,6 +10,8 @@ References:
 - PB server running with schema and hooks installed (see `SCHEMA_AND_MIGRATIONS.md`).
 - Backend PB adapters implemented (see `REPOSITORIES_AND_ADAPTERS.md`).
 - Auth model decided (see `AUTH_AND_AUTHORIZATION.md`).
+- Communication plan drafted for a one-time re-login after cutover.
+- Secret storage plan in place for any PB service credentials used by background jobs (environment variables or an external secret manager).
 
 ## Execution Steps
 - [ ] Freeze writes on the source (maintenance window): stop API writes or route to a maintenance page.
@@ -32,11 +34,14 @@ References:
   - Referential checks for relations (e.g., messages → channels, chats → users, chats.tags → tags).
 - [ ] Cutover:
   - Point backend to PB-only config; bring API out of maintenance.
+  - In PB-native mode, invalidate existing Open WebUI sessions (JWT cookies) and require users to sign in via PB.
   - Monitor error rates and latencies.
 - [ ] Backout plan:
   - If issues arise, restore SQL snapshot and revert backend config; investigate diffs.
+  - Communicate a second re-login requirement if switching IdP back to SQL.
 
 ## Deliverables
 - [ ] Python migration scripts for each collection (idempotent, resumable).
 - [ ] Logging/reporting of migrated counts, failures, and verification results.
 - [ ] Runbook describing command ordering, env vars, and expected timings.
+ - [ ] User communication template: scheduled maintenance window, re-login required, password reset instructions where applicable.
