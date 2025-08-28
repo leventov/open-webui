@@ -6,6 +6,7 @@ Goal: Support full, offline migrations of Open WebUI data between SQL backends (
 - Migrations are run with the service offline (maintenance window) to avoid dual-writes.
 - Data transforms are reversible or mirrored to ensure parity.
 - Scripts are idempotent and resumable.
+ - Authentication tokens are not migrated; users will re-authenticate post-cutover when changing IdP.
 
 ## Mirrored Fields (required)
 - Tags:
@@ -21,6 +22,9 @@ Goal: Support full, offline migrations of Open WebUI data between SQL backends (
 - Files:
   - Prefer reuse of storage (local dir or S3) and migrate only metadata. Otherwise, upload binaries.
 - Preserve canonical IDs where required or store mapping tables if PB ids differ.
+ - Authentication:
+  - User sessions: Open WebUI JWTs cannot be transformed into PB record tokens securely; purge/expire sessions on cutover.
+  - Passwords: if legacy password hashes are incompatible with PB, mark accounts to require reset or plan an OAuth-first login path.
 
 ## Direction B: PocketBase → SQL
 - Use batch Python scripts to export PB records and insert into SQL.
@@ -29,6 +33,9 @@ Goal: Support full, offline migrations of Open WebUI data between SQL backends (
   - Recreate SQL composite identity: `(id=user_normalized_tag, user_id)`.
 - Files:
   - If using shared storage, migrate only metadata; otherwise download and write binaries.
+ - Authentication:
+  - PB tokens do not migrate to Open WebUI sessions; require re-login after switching back.
+  - Consider issuing a forced-signout at maintenance end.
 
 ## Prior Art
 - Open WebUI already supports moving between SQLite and PostgreSQL via Alembic migrations and runtime config; content shape is identical since both are SQLAlchemy-backed.
@@ -45,3 +52,4 @@ Goal: Support full, offline migrations of Open WebUI data between SQL backends (
 - [ ] Mapping for IDs where necessary, or explicit decision to rely on PB ids as canonical with back-mapping.
 - [ ] Verification scripts (counts, samples, relations).
 - [ ] Runbooks for both directions.
+ - [ ] Communication template for one-time re-login and password reset instructions.

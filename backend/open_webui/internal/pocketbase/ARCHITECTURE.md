@@ -20,8 +20,12 @@ async def commit_session_after_request(request: Request, call_next):
     Session.commit()
     return response
 ```
-- [x] AuthN/AuthZ model: Open WebUI remains the identity provider; PB is accessed via a service account.
+- [x] AuthN/AuthZ model: PocketBase is the native identity provider.
+  - Use a PB Auth collection for users (not a base collection) to leverage built-in login, OAuth, email verification, and session tokens.
+  - Open WebUI verifies PB-issued tokens and projects PB users into its domain model.
+  - Existing Open WebUI JWT issuance is disabled in PB mode (except for legacy API keys as configured).
   - Details in `AUTH_AND_AUTHORIZATION.md`.
+  - Default to a single Auth collection named `users` for interactive app login; advanced deployments may use multiple Auth collections (e.g., `staff`, `clients`) but Open WebUI integrates with one configured Auth collection.
 - [x] Offline, bidirectional migrations are a goal.
   - See `OFFLINE_MIGRATIONS.md`; schema and hooks are designed to preserve reversibility (e.g., mirrored `chat.meta.tags`).
 
@@ -32,6 +36,7 @@ async def commit_session_after_request(request: Request, call_next):
 - [ ] Deliver PB JS migrations and hooks into `pb_migrations/` and `pb_hooks/` on the PB server; document ops steps.
 - [ ] Add a realtime bridge from PB SSE to our Socket.IO layer.
 - [ ] Replace `files` SQL table with PB file fields and adjust workflows.
+ - [ ] Add PB-auth verification dependency and `WEBUI_AUTH_MODE=pocketbase` gating.
 
 ## Components
 - Repositories/Adapters Layer
@@ -73,4 +78,8 @@ async def commit_session_after_request(request: Request, call_next):
 - PB JS migrations: `https://pocketbase.io/docs/js-migrations/`
 - PB auth: `https://pocketbase.io/docs/authentication/`
 - PB production: `https://pocketbase.io/docs/going-to-production/`
-- Offline migrations: `OFFLINE_MIGRATIONS.md`
+
+## Cutover & User Impact
+- Tokens: existing Open WebUI JWT cookies/tokens cannot be migrated to PB; a one-time user re-login is required at cutover.
+- Passwords: both PB and Open WebUI use bcrypt (PB default cost 10; Open WebUI passlib default cost 12). The cost is encoded in the hash and does not affect verification compatibility. However, PB doesn’t accept pre-hashed passwords via API, so users with local passwords must reset their password in PB (or sign in via OAuth) to establish a PB-side password.
+- Service credentials: avoid storing PB service creds in PB; use environment or a secret manager when background jobs need non-user access.
