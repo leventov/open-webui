@@ -63,6 +63,19 @@ These may be used temporarily during migration or when PB cannot be the visible 
 - Per-record access: keep `access_control` JSON and enforce in Open WebUI.
 - PB collection rules may additionally restrict direct PB access if you expose PB; Open WebUI remains the enforcement point for app APIs.
 
+### PocketBase Auth collection specifics
+- Auth collections are a special PB collection type designed for users. They include the system fields `email`, `emailVisibility`, `verified`, `password`, and `tokenKey` and provide built-in login, email verification, password reset, and session tokens.
+- You may have multiple Auth collections (e.g., `users`, `staff`, `clients`). Open WebUI targets a single configured Auth collection for interactive app login (default `users`).
+- Roles and groups can be modeled as:
+  - A `select` field on the Auth collection (e.g., `role` = `admin|user|pending`), and
+  - Relations from domain collections to the Auth collection to enforce ownership/visibility.
+- When exposing PB directly, you can use PB rules with the current auth context:
+  - Role-based: `@request.auth.role = "admin"`
+  - Ownership: `@request.auth.id != "" && author = @request.auth.id`
+  - Manage rule (Auth collections only): enable a separate "Manage" API rule to allow designated users to manage another user's record when needed.
+  - Mixed/advanced logic using `&&`, `||`, parentheses, and nested relation lookups.
+  - Reference: PocketBase Auth collection docs.
+
 ## Security & Operations
 - Minimize long-lived PB admin/service credentials. In the PB-native model, Open WebUI typically operates on behalf of the end-user using that user’s PB token.
 - If a service account is required (background jobs), provision a least-privilege PB user and store its credentials in environment variables or a secret manager, never in PB itself.

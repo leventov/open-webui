@@ -25,6 +25,7 @@ async def commit_session_after_request(request: Request, call_next):
   - Open WebUI verifies PB-issued tokens and projects PB users into its domain model.
   - Existing Open WebUI JWT issuance is disabled in PB mode (except for legacy API keys as configured).
   - Details in `AUTH_AND_AUTHORIZATION.md`.
+  - Default to a single Auth collection named `users` for interactive app login; advanced deployments may use multiple Auth collections (e.g., `staff`, `clients`) but Open WebUI integrates with one configured Auth collection.
 - [x] Offline, bidirectional migrations are a goal.
   - See `OFFLINE_MIGRATIONS.md`; schema and hooks are designed to preserve reversibility (e.g., mirrored `chat.meta.tags`).
 
