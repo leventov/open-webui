@@ -70,7 +70,7 @@ These may be used temporarily during migration or when PB cannot be the visible 
 
 ## Migration Implications
 - Existing Open WebUI JWTs and refresh cookies cannot be securely migrated to PB tokens. A one-time re-login is required after cutover.
-- For local-password users whose hash algorithm is incompatible with PB, require password reset or first-login via OAuth.
+- Password hashing compatibility: both PB and Open WebUI use bcrypt. PB defaults to cost 10; Open WebUI’s passlib defaults to cost 12. The cost factor is encoded in the hash and doesn’t affect verification compatibility. However, PB does not accept pre-hashed passwords via API, so existing hashes cannot be imported. Require a password reset (or first-login via OAuth) to establish a PB-side password.
 - Document re-login in rollout communications and show a friendly banner post-cutover.
 
 ## Implementation Checklist (PB-native IdP)

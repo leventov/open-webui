@@ -77,9 +77,8 @@ async def commit_session_after_request(request: Request, call_next):
 - PB JS migrations: `https://pocketbase.io/docs/js-migrations/`
 - PB auth: `https://pocketbase.io/docs/authentication/`
 - PB production: `https://pocketbase.io/docs/going-to-production/`
-- Offline migrations: `OFFLINE_MIGRATIONS.md`
 
 ## Cutover & User Impact
 - Tokens: existing Open WebUI JWT cookies/tokens cannot be migrated to PB; a one-time user re-login is required at cutover.
-- Passwords: where PB hashing differs, require password reset or first-login via OAuth.
+- Passwords: both PB and Open WebUI use bcrypt (PB default cost 10; Open WebUI passlib default cost 12). The cost is encoded in the hash and does not affect verification compatibility. However, PB doesn’t accept pre-hashed passwords via API, so users with local passwords must reset their password in PB (or sign in via OAuth) to establish a PB-side password.
 - Service credentials: avoid storing PB service creds in PB; use environment or a secret manager when background jobs need non-user access.
