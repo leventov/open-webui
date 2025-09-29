@@ -1,0 +1,33 @@
+# fly.toml app configuration file generated for pocketopenwebui on 2025-09-27T22:09:41+04:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+# app name is intentionally omitted; pass --app on deploy
+primary_region = 'sin'
+
+[build]
+  dockerfile = 'Dockerfile.fly'
+
+[env]
+  ENABLE_INITIAL_ADMIN_SIGNUP = 'True'
+  HOST = '0.0.0.0'
+  PORT = '8080'
+  WEBUI_AUTH = 'True'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'suspend'
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 250
+    soft_limit = 200
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 2
