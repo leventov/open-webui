@@ -53,8 +53,21 @@ class JSONField(types.TypeDecorator):
 # Workaround to handle the peewee migration
 # This is required to ensure the peewee migration is handled before the alembic migration
 def handle_peewee_migration(DATABASE_URL):
-    # db = None
+    # Defensive init to avoid UnboundLocalError if connection fails early
+    db = None
     try:
+        # Log a sanitized view of the DSN for debugging (no password)
+        try:
+            from urllib.parse import urlparse, urlunparse
+            _p = urlparse(DATABASE_URL)
+            _netloc = _p.hostname or ""
+            if _p.port:
+                _netloc += f":{_p.port}"
+            _sanitized = urlunparse((_p.scheme, _netloc, _p.path, _p.params, _p.query, _p.fragment))
+            log.info(f"peewee: connecting to { _sanitized }")
+        except Exception:
+            pass
+
         # Replace the postgresql:// with postgres:// to handle the peewee migration
         db = register_connection(DATABASE_URL.replace("postgresql://", "postgres://"))
         migrate_dir = OPEN_WEBUI_DIR / "internal" / "migrations"
@@ -63,18 +76,19 @@ def handle_peewee_migration(DATABASE_URL):
         db.close()
 
     except Exception as e:
-        log.error(f"Failed to initialize the database connection: {e}")
+        log.exception(f"peewee migration failed: {e}")
         log.warning(
             "Hint: If your database password contains special characters, you may need to URL-encode it."
         )
+        # Re-raise so startup fail is explicit; logs above show root cause
         raise
     finally:
         # Properly closing the database connection
-        if db and not db.is_closed():
-            db.close()
-
-        # Assert if db connection has been closed
-        assert db.is_closed(), "Database connection is still open."
+        try:
+            if db is not None and hasattr(db, "is_closed") and not db.is_closed():
+                db.close()
+        except Exception:
+            pass
 
 
 handle_peewee_migration(DATABASE_URL)

@@ -12,6 +12,7 @@ from urllib.parse import quote
 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 from fastapi import Depends, HTTPException, Request, APIRouter
+import logging as _ow_logging
 from fastapi.responses import (
     FileResponse,
     StreamingResponse,
@@ -882,6 +883,17 @@ async def generate_chat_completion(
 
     url = request.app.state.config.OPENAI_API_BASE_URLS[idx]
     key = request.app.state.config.OPENAI_API_KEYS[idx]
+    try:
+        _lg = _ow_logging.getLogger("open_webui.openai")
+        _lg.info(
+            "chat: idx=%s base_url=%s model=%s user=%s",
+            idx,
+            url,
+            payload.get("model"),
+            getattr(user, "id", None),
+        )
+    except Exception:
+        pass
 
     # Check if model is a reasoning model that needs special handling
     if is_openai_reasoning_model(payload["model"]):
@@ -918,6 +930,11 @@ async def generate_chat_completion(
         request_url = f"{request_url}/chat/completions?api-version={api_version}"
     else:
         request_url = f"{url}/chat/completions"
+    try:
+        _lg = _ow_logging.getLogger("open_webui.openai")
+        _lg.info("chat: request_url=%s", request_url)
+    except Exception:
+        pass
 
     payload = json.dumps(payload)
 
@@ -957,6 +974,29 @@ async def generate_chat_completion(
             except Exception as e:
                 log.error(e)
                 response = await r.text()
+            if r.status >= 400:
+                try:
+                    _lg = _ow_logging.getLogger("open_webui.openai")
+                    _lg.warning(
+                        "chat: status=%s url=%s body=%s",
+                        r.status,
+                        request_url,
+                        (response if isinstance(response, str) else str(response))[:1000],
+                    )
+                except Exception:
+                    pass
+
+            # If status 200 but provider returned error payload, log it too
+            if isinstance(response, dict) and response.get("error"):
+                try:
+                    _lg = _ow_logging.getLogger("open_webui.openai")
+                    _lg.warning(
+                        "chat: provider error with 200 status url=%s body=%s",
+                        request_url,
+                        str(response)[:1000],
+                    )
+                except Exception:
+                    pass
 
             if r.status >= 400:
                 if isinstance(response, (dict, list)):
@@ -967,6 +1007,11 @@ async def generate_chat_completion(
             return response
     except Exception as e:
         log.exception(e)
+        try:
+            _lg = _ow_logging.getLogger("open_webui.openai")
+            _lg.exception("chat: exception for url=%s", request_url)
+        except Exception:
+            pass
 
         raise HTTPException(
             status_code=r.status if r else 500,

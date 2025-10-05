@@ -11,3 +11,6 @@ RUN apt-get update \
     curl \
  && rm -rf /var/lib/apt/lists/*
 
+# Overlay local backend (includes alias remap and logging changes)
+COPY backend/open_webui /app/backend/open_webui
+

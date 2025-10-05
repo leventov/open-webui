@@ -1047,6 +1047,26 @@ except Exception:
     pass
 OPENAI_API_BASE_URL = "https://api.openai.com/v1"
 
+# Runtime env override: allow OPENAI_API_BASE_URL / OPENAI_API_KEY to override persisted config
+_env_override_url = os.environ.get("OPENAI_API_BASE_URL", "").strip()
+_env_override_key = os.environ.get("OPENAI_API_KEY", "").strip()
+if _env_override_url:
+    if _env_override_url.endswith("/"):
+        _env_override_url = _env_override_url[:-1]
+    try:
+        # Override in-memory values used by routers
+        OPENAI_API_BASE_URLS.value = [_env_override_url]
+        # Keep default helper vars aligned
+        OPENAI_API_BASE_URL = _env_override_url
+    except Exception:
+        pass
+if _env_override_key:
+    try:
+        OPENAI_API_KEYS.value = [_env_override_key]
+        OPENAI_API_KEY = _env_override_key
+    except Exception:
+        pass
+
 
 ####################################
 # MODELS
