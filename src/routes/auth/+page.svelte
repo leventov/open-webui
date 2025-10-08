@@ -4,7 +4,7 @@
 
 	import { toast } from 'svelte-sonner';
 
-	import { onMount, getContext, tick } from 'svelte';
+	import { onMount, onDestroy, getContext, tick } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/stores';
 
@@ -35,6 +35,53 @@
 	let confirmPassword = '';
 
 	let ldapUsername = '';
+
+	// Track websocket connectivity on the auth page to surface clear errors
+	let socketConnected = true;
+	let attachedSocket: any = null;
+
+	function handleSocketConnect() {
+		socketConnected = true;
+	}
+
+	function handleSocketConnectError(err: any) {
+		socketConnected = false;
+		toast.error($i18n.t('Cannot connect to server. Retrying...'));
+		console.error('Socket connect_error on auth page:', err);
+	}
+
+	function handleSocketDisconnect(reason: any) {
+		socketConnected = false;
+		toast.error($i18n.t('Connection to server lost. Please refresh or try again.'));
+		console.warn('Socket disconnected on auth page:', reason);
+	}
+
+	// Reactively attach listeners when the socket becomes available
+	$: {
+		const s = $socket;
+		if (s && s !== attachedSocket) {
+			if (attachedSocket) {
+				attachedSocket.off('connect', handleSocketConnect);
+				attachedSocket.off('connect_error', handleSocketConnectError);
+				attachedSocket.off('disconnect', handleSocketDisconnect);
+			}
+
+			attachedSocket = s;
+			attachedSocket.on('connect', handleSocketConnect);
+			attachedSocket.on('connect_error', handleSocketConnectError);
+			attachedSocket.on('disconnect', handleSocketDisconnect);
+		}
+
+		// Do not toggle socketConnected solely based on absence of socket during init.
+	}
+
+	onDestroy(() => {
+		if (attachedSocket) {
+			attachedSocket.off('connect', handleSocketConnect);
+			attachedSocket.off('connect_error', handleSocketConnectError);
+			attachedSocket.off('disconnect', handleSocketDisconnect);
+		}
+	});
 
 	const setSessionUser = async (sessionUser, redirectPath: string | null = null) => {
 		if (sessionUser) {
@@ -264,6 +311,12 @@
 										</div>
 									{/if}
 								</div>
+
+								{#if ($config?.features?.enable_websocket ?? true) && !socketConnected}
+									<div class="mt-2 text-sm font-medium text-red-600 dark:text-red-400">
+										{$i18n.t('Connection to server lost. Please refresh or try again.')}
+									</div>
+								{/if}
 
 								{#if $config?.features.enable_login_form || $config?.features.enable_ldap || form}
 									<div class="flex flex-col mt-4">
