@@ -1,3 +1,10 @@
+FROM node:22-alpine3.20 AS fe-build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --force
+COPY . .
+RUN npm run build
+
 FROM ghcr.io/open-webui/open-webui:main
 
 RUN apt-get update \
@@ -11,6 +18,15 @@ RUN apt-get update \
     curl \
  && rm -rf /var/lib/apt/lists/*
 
-# Overlay local backend (includes alias remap and logging changes)
-COPY backend/open_webui /app/backend/open_webui
+# Overlay local backend to ensure our server changes (e.g., x-bf-vk injection) are included
+COPY backend/ /app/backend/
+
+# Ensure required Python dependencies present in base image via uv only, and pin bcrypt to a passlib-compatible version
+RUN uv pip install --system --no-cache-dir -r /app/backend/requirements.txt && \
+    uv pip install --system --no-cache-dir 'passlib[bcrypt]==1.7.4' 'bcrypt==4.0.1'
+
+# Overlay rebuilt frontend from local sources
+COPY --from=fe-build /app/build /app/build
+
+#### Removed runtime package install to reduce startup latency; dependencies are baked at build time
 

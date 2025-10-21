@@ -6,14 +6,21 @@
 # app name is intentionally omitted; pass --app on deploy
 primary_region = 'sin'
 
-[build]
-  dockerfile = 'Dockerfile.fly'
+[deploy]
+  ha = false
 
 [env]
   ENABLE_INITIAL_ADMIN_SIGNUP = 'True'
   HOST = '0.0.0.0'
   PORT = '8080'
   WEBUI_AUTH = 'True'
+  BYPASS_EMBEDDING_AND_RETRIEVAL = 'True'
+  ENABLE_BASE_MODELS_CACHE = 'False'
+  RAG_EMBEDDING_MODEL = ''
+  RAG_EMBEDDING_MODEL_AUTO_UPDATE = 'False'
+  RAG_EMBEDDING_ENGINE = 'openai'
+  # Extend model list timeout to tolerate bifrost cold starts
+  AIOHTTP_CLIENT_TIMEOUT_OPENAI_MODEL_LIST = '30'
 
 [http_service]
   internal_port = 8080
@@ -21,6 +28,13 @@ primary_region = 'sin'
   auto_stop_machines = 'suspend'
   auto_start_machines = true
   min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = '90s'
+    interval = '15s'
+    method = 'get'
+    path = '/health'
+    timeout = '14s'
 
   [http_service.concurrency]
     type = 'requests'
