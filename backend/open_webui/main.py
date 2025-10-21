@@ -1538,14 +1538,30 @@ async def chat_completion(
         and metadata.get("chat_id")
         and metadata.get("message_id")
     ):
+        try:
+            log.info(
+                f"chat:bg start chat_id={metadata['chat_id']} message_id={metadata['message_id']}"
+            )
+        except Exception:
+            pass
         # Asynchronous Chat Processing
         task_id, _ = await create_task(
             request.app.state.redis,
             process_chat(request, form_data, user, metadata, model),
             id=metadata["chat_id"],
         )
+        try:
+            log.info(
+                f"chat:bg queued task_id={task_id} chat_id={metadata['chat_id']} message_id={metadata['message_id']}"
+            )
+        except Exception:
+            pass
         return {"status": True, "task_id": task_id}
     else:
+        try:
+            log.info("chat:sync path")
+        except Exception:
+            pass
         return await process_chat(request, form_data, user, metadata, model)
 
 

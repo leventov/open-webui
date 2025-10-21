@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 from typing import Optional
+import os
 
 import aiohttp
 from aiocache import cached
@@ -67,21 +68,30 @@ async def send_get_request(url, key=None, user: UserModel = None):
     timeout = aiohttp.ClientTimeout(total=AIOHTTP_CLIENT_TIMEOUT_MODEL_LIST)
     try:
         async with aiohttp.ClientSession(timeout=timeout, trust_env=True) as session:
+            headers = {
+                **({"Authorization": f"Bearer {key}"} if key else {}),
+                **(
+                    {
+                        "X-OpenWebUI-User-Name": quote(user.name, safe=" "),
+                        "X-OpenWebUI-User-Id": user.id,
+                        "X-OpenWebUI-User-Email": user.email,
+                        "X-OpenWebUI-User-Role": user.role,
+                    }
+                    if ENABLE_FORWARD_USER_INFO_HEADERS and user
+                    else {}
+                ),
+            }
+            # Inject Bifrost governance VK when set via environment to support aggregator calls
+            try:
+                x_bf_vk = os.environ.get("BIFROST_VIRTUAL_KEY", "").strip()
+                if x_bf_vk:
+                    headers["x-bf-vk"] = x_bf_vk
+            except Exception:
+                pass
+
             async with session.get(
                 url,
-                headers={
-                    **({"Authorization": f"Bearer {key}"} if key else {}),
-                    **(
-                        {
-                            "X-OpenWebUI-User-Name": quote(user.name, safe=" "),
-                            "X-OpenWebUI-User-Id": user.id,
-                            "X-OpenWebUI-User-Email": user.email,
-                            "X-OpenWebUI-User-Role": user.role,
-                        }
-                        if ENABLE_FORWARD_USER_INFO_HEADERS and user
-                        else {}
-                    ),
-                },
+                headers=headers,
                 ssl=AIOHTTP_CLIENT_SESSION_SSL,
             ) as response:
                 return await response.json()
@@ -574,6 +584,12 @@ async def get_models(
                 headers, cookies = get_headers_and_cookies(
                     request, url, key, api_config, user=user
                 )
+                # Inject Bifrost governance VK if provided in connection config
+                x_bf_vk = api_config.get("x_bf_vk") if isinstance(api_config, dict) else None
+                if not x_bf_vk:
+                    x_bf_vk = os.environ.get("BIFROST_VIRTUAL_KEY", "").strip()
+                if x_bf_vk:
+                    headers["x-bf-vk"] = x_bf_vk
 
                 if api_config.get("azure", False):
                     models = {
@@ -660,6 +676,12 @@ async def verify_connection(
             headers, cookies = get_headers_and_cookies(
                 request, url, key, api_config, user=user
             )
+            # Inject Bifrost governance VK if provided in connection config
+            x_bf_vk = api_config.get("x_bf_vk") if isinstance(api_config, dict) else None
+            if not x_bf_vk:
+                x_bf_vk = os.environ.get("BIFROST_VIRTUAL_KEY", "").strip()
+            if x_bf_vk:
+                headers["x-bf-vk"] = x_bf_vk
 
             if api_config.get("azure", False):
                 # Only set api-key header if not using Azure Entra ID authentication
@@ -916,6 +938,30 @@ async def generate_chat_completion(
     headers, cookies = get_headers_and_cookies(
         request, url, key, api_config, metadata, user=user
     )
+    # Inject Bifrost governance VK if provided in connection config
+    x_bf_vk = api_config.get("x_bf_vk") if isinstance(api_config, dict) else None
+    if not x_bf_vk:
+        x_bf_vk = os.environ.get("BIFROST_VIRTUAL_KEY", "").strip()
+    if x_bf_vk:
+        headers["x-bf-vk"] = x_bf_vk
+
+    # Correlation id for end-to-end tracing
+    try:
+        from uuid import uuid4
+
+        cid = str(uuid4())
+        headers["x-bf-trace-id"] = cid
+        _lg = _ow_logging.getLogger("open_webui.openai")
+        _lg.info(
+            "chat: idx=%s base_url=%s model=%s x_bf_vk=%s cid=%s",
+            idx,
+            url,
+            payload.get("model"),
+            bool(x_bf_vk),
+            cid,
+        )
+    except Exception:
+        cid = None
 
     if api_config.get("azure", False):
         api_version = api_config.get("api_version", "2023-03-15-preview")
@@ -978,10 +1024,11 @@ async def generate_chat_completion(
                 try:
                     _lg = _ow_logging.getLogger("open_webui.openai")
                     _lg.warning(
-                        "chat: status=%s url=%s body=%s",
+                        "chat: status=%s url=%s body=%s cid=%s",
                         r.status,
                         request_url,
                         (response if isinstance(response, str) else str(response))[:1000],
+                        cid,
                     )
                 except Exception:
                     pass
@@ -991,9 +1038,10 @@ async def generate_chat_completion(
                 try:
                     _lg = _ow_logging.getLogger("open_webui.openai")
                     _lg.warning(
-                        "chat: provider error with 200 status url=%s body=%s",
+                        "chat: provider error with 200 status url=%s body=%s cid=%s",
                         request_url,
                         str(response)[:1000],
+                        cid,
                     )
                 except Exception:
                     pass
@@ -1009,7 +1057,7 @@ async def generate_chat_completion(
         log.exception(e)
         try:
             _lg = _ow_logging.getLogger("open_webui.openai")
-            _lg.exception("chat: exception for url=%s", request_url)
+            _lg.exception("chat: exception for url=%s cid=%s", request_url, cid)
         except Exception:
             pass
 
@@ -1056,6 +1104,12 @@ async def embeddings(request: Request, form_data: dict, user):
     streaming = False
 
     headers, cookies = get_headers_and_cookies(request, url, key, api_config, user=user)
+    # Inject Bifrost governance VK if provided in connection config
+    x_bf_vk = api_config.get("x_bf_vk") if isinstance(api_config, dict) else None
+    if not x_bf_vk:
+        x_bf_vk = os.environ.get("BIFROST_VIRTUAL_KEY", "").strip()
+    if x_bf_vk:
+        headers["x-bf-vk"] = x_bf_vk
     try:
         session = aiohttp.ClientSession(trust_env=True)
         r = await session.request(

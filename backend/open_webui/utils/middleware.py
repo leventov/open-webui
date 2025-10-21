@@ -2705,6 +2705,13 @@ async def process_chat_response(
                 )
 
                 await background_tasks_handler()
+                try:
+                    title = Chats.get_chat_title_by_id(metadata["chat_id"])
+                    log.info(
+                        f"chat:stream done chat_id={metadata['chat_id']} message_id={metadata['message_id']} title_len={len(title) if isinstance(title, str) else 0}"
+                    )
+                except Exception:
+                    pass
             except asyncio.CancelledError:
                 log.warning("Task was cancelled!")
                 await event_emitter({"type": "chat:tasks:cancel"})

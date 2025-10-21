@@ -92,6 +92,11 @@ async def cleanup_task(redis, task_id: str, id=None):
         item_tasks[id].remove(task_id)
         if not item_tasks[id]:  # If no tasks left for this ID, remove the entry
             item_tasks.pop(id, None)
+    try:
+        chat_id = id if isinstance(id, str) else None
+        log.info(f"task:cleanup id={task_id} chat_id={chat_id}")
+    except Exception:
+        pass
 
 
 async def create_task(redis, coroutine, id=None):
@@ -115,6 +120,12 @@ async def create_task(redis, coroutine, id=None):
 
     if redis:
         await redis_save_task(redis, task_id, id)
+
+    try:
+        chat_id = id if isinstance(id, str) else None
+        log.info(f"task:create id={task_id} chat_id={chat_id}")
+    except Exception:
+        pass
 
     return task_id, task
 

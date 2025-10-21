@@ -142,6 +142,65 @@
 	};
 
 	let taskIds = null;
+	let taskWatchTimer: any = null;
+	let taskMaxWaitTimer: any = null;
+
+	const clearTaskWatcher = () => {
+		if (taskWatchTimer) {
+			clearInterval(taskWatchTimer);
+			taskWatchTimer = null;
+		}
+		if (taskMaxWaitTimer) {
+			clearTimeout(taskMaxWaitTimer);
+			taskMaxWaitTimer = null;
+		}
+	};
+
+	const refreshChatThread = async () => {
+		const refreshed = await getChatById(localStorage.token, $chatId).catch(() => null);
+		if (refreshed && refreshed.chat) {
+			const chatContent = refreshed.chat;
+			chatTitle.set(chatContent.title);
+			params = chatContent?.params ?? {};
+			chatFiles = chatContent?.files ?? [];
+			history =
+				(chatContent?.history ?? undefined) !== undefined
+					? chatContent.history
+					: convertMessagesToHistory(chatContent.messages);
+			if (history.currentId) {
+				for (const message of Object.values(history.messages)) {
+					if (message.role === 'assistant') {
+						message.done = true;
+					}
+				}
+			}
+			await tick();
+			if (autoScroll) scrollToBottom('smooth');
+		}
+	};
+
+	const startTaskWatcher = (id: string) => {
+		if (taskWatchTimer) return;
+		taskWatchTimer = setInterval(async () => {
+			const res = await getTaskIdsByChatId(localStorage.token, id).catch(() => null);
+			if (!res || !Array.isArray(res.task_ids)) return;
+			if (res.task_ids.length === 0) {
+				clearTaskWatcher();
+				taskIds = null;
+				generating = false;
+				await refreshChatThread();
+			}
+		}, 1500);
+
+		// Hard cap to recover even if task list never empties (missed cleanup or socket outage)
+		if (!taskMaxWaitTimer) {
+			taskMaxWaitTimer = setTimeout(async () => {
+				clearTaskWatcher();
+				generating = false;
+				await refreshChatThread();
+			}, 15000);
+		}
+	};
 
 	// Chat Input
 	let prompt = '';
@@ -351,6 +410,9 @@
 					chatCompletionEventHandler(data, message, event.chat_id);
 				} else if (type === 'chat:tasks:cancel') {
 					taskIds = null;
+					clearTaskWatcher();
+					generating = false;
+					await refreshChatThread();
 					const responseMessage = history.messages[history.currentId];
 					// Set all response messages to done
 					for (const messageId of history.messages[responseMessage.parentId].childrenIds) {
@@ -1008,6 +1070,9 @@
 
 				if (taskRes) {
 					taskIds = taskRes.task_ids;
+					if (Array.isArray(taskIds) && taskIds.length > 0) {
+						startTaskWatcher($chatId);
+					}
 				}
 
 				await tick();
@@ -1372,6 +1437,8 @@
 
 		if (done) {
 			message.done = true;
+			clearTaskWatcher();
+			generating = false;
 
 			if ($settings.responseAutoCopy) {
 				copyToClipboard(message.content);
@@ -1899,6 +1966,7 @@
 				} else {
 					taskIds = [res.task_id];
 				}
+				startTaskWatcher(chatId);
 			}
 		}
 
@@ -1958,6 +2026,7 @@
 			}
 
 			taskIds = null;
+			clearTaskWatcher();
 
 			const responseMessage = history.messages[history.currentId];
 			// Set all response messages to done
